@@ -1,0 +1,55 @@
+{
+  "name": "mastering-solana",
+  "version": "1.0.0",
+  "description": "Mastering Solana: From Fundamentals to Advanced Development",
+  "main": "index.js",
+  "keywords": [
+    "solana",
+    "blockchain",
+    "web3",
+    "typescript"
+  ],
+  "author": "@digbenjamins",
+  "license": "ISC",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "one": "tsx src/1-connect-to-a-solana-environment/index.ts",
+    "two": "tsx src/2-interact-with-a-solana-environment/index.ts",
+    "three": "tsx src/3-solana-keypairs/index.ts",
+    "four": "tsx src/4-solana-transactions/index.ts",
+    "five": "tsx src/5-solana-accounts/index.ts",
+    "create": "tsx src/8-solana-tokens/01-create.ts",
+    "mint": "tsx src/8-solana-tokens/02-mint.ts",
+    "transfer": "tsx src/8-solana-tokens/03-transfer.ts",
+    "delegate-approve": "tsx src/8-solana-tokens/04-delegate-approve.ts",
+    "delegate-transfer": "tsx src/8-solana-tokens/05-delegate-transfer.ts",
+    "delegate-revoke": "tsx src/8-solana-tokens/06-delegate-revoke.ts",
+    "revoke-authority": "tsx src/8-solana-tokens/07-authority.ts",
+    "burn": "tsx src/8-solana-tokens/08-burn.ts",
+    "close": "tsx src/8-solana-tokens/09-close.ts",
+    "sync-native": "tsx src/8-solana-tokens/10-sync-native.ts",
+    "create-2022": "tsx src/9-solana-token-2022/01-create.ts",
+    "mint-2022": "tsx src/9-solana-token-2022/02-mint.ts",
+    "transfer-2022": "tsx src/9-solana-token-2022/03-transfer.ts",
+    "fee-2022": "tsx src/9-solana-token-2022/04-create-fee.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@solana-program/compute-budget": "^0.11.0",
+    "@solana-program/memo": "^0.10.0",
+    "@solana-program/system": "^0.10.0",
+    "@solana-program/token": "^0.9.0",
+    "@solana-program/token-2022": "^0.6.1",
+    "@solana/kit": "^5.0.0",
+    "@solana/web3.js": "^1.98.4",
+    "bs58": "^6.0.0",
+    "tweetnacl": "^1.0.3"
+  }
+}
