@@ -1,28 +1,37 @@
 import {
   appendTransactionMessageInstructions,
+  compileTransactionMessage,
   createSolanaRpc,
   createSolanaRpcSubscriptions,
   createTransactionMessage,
+  getBase64Decoder,
+  getCompiledTransactionMessageDecoder,
+  getCompiledTransactionMessageEncoder,
+  getSignatureFromTransaction,
   isSolanaError,
   lamports,
   pipe,
+  prependTransactionMessageInstructions,
+  sendAndConfirmTransactionFactory,
   sendTransactionWithoutConfirmingFactory,
   setTransactionMessageFeePayerSigner,
   setTransactionMessageLifetimeUsingBlockhash,
   signTransactionMessageWithSigners,
-  SOLANA_ERROR__JSON_RPC__SERVER_ERROR_SEND_TRANSACTION_PREFLIGHT_FAILURE,
+  SOLANA_ERROR__BLOCK_HEIGHT_EXCEEDED,
+  TransactionMessageBytes,
+  TransactionMessageBytesBase64,
 } from "@solana/kit";
 import { loadSignerFromFile } from "../wallet";
 import { config } from "../config";
 import { getTransferSolInstruction } from "@solana-program/system";
 import { getAddMemoInstruction } from "@solana-program/memo";
-import { estimateComputeUnitLimitFactory, getSetComputeUnitLimitInstruction } from "@solana-program/compute-budget";
-import { estimateAndSetComputeUnitLimitFactory } from "../functions";
+import { estimateComputeUnitLimitFactory, getSetComputeUnitLimitInstruction, getSetComputeUnitPriceInstruction } from "@solana-program/compute-budget";
+import { clusterApiUrl, LAMPORTS_PER_SOL } from "@solana/web3.js";
 
 const rpc = createSolanaRpc(config.RPC_HTTP);
 const rpcSubscriptions = createSolanaRpcSubscriptions(config.RPC_WS);
-const wallet = await loadSignerFromFile(); // BENjdUV4wjhFPbEQfB3pnuC9g7PxLHH3kGE33oovG6WP
-
+const wallet = await loadSignerFromFile(); // Pri2XH96RyGPjJraPTHPiaikRp73KDxmMJvg7kKnsqC
+const receiver = await loadSignerFromFile("sec.json"); // SecpqnoH2pRrPvZC8BEUykg94gVi53WB3uBJtiUzgY3
 const transferAmount = lamports(config.LAMPORTS_PER_SOL / 100n); // 0.01 SOL
 const memoMessage = "Hello, Solana Transactions!";
 
@@ -52,7 +61,7 @@ const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
  */
 const transferInstruction = getTransferSolInstruction({
   source: wallet,
-  destination: wallet.address,
+  destination: receiver.address,
   amount: transferAmount,
 });
 
@@ -67,7 +76,7 @@ const memoInstruction = getAddMemoInstruction({
  *  Build the transaction
  */
 const transactionMessage = await pipe(
-  createTransactionMessage({ version: 0 }),
+  createTransactionMessage({ version: "legacy" }),
   (tx) => setTransactionMessageFeePayerSigner(wallet, tx),
   (tx) => setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, tx),
   (tx) => appendTransactionMessageInstructions([transferInstruction, memoInstruction], tx)
@@ -78,21 +87,60 @@ const transactionMessage = await pipe(
  */
 const estimateComputeUnitLimit = estimateComputeUnitLimitFactory({ rpc });
 const computeUnitsEstimate = await estimateComputeUnitLimit(transactionMessage);
-console.log("💡 Estimated Compute Units:", computeUnitsEstimate);
+console.log("💡 Estimated Compute Units:", computeUnitsEstimate, "CU");
+
+// /**
+//  *  Add compute unit limit instruction to the transaction
+//  *  The lower that number is, the higher the chances that our transaction will be included in the next block.
+//  */
+const budgetedTransactionMessage = prependTransactionMessageInstructions(
+  [getSetComputeUnitLimitInstruction({ units: computeUnitsEstimate })],
+  transactionMessage
+);
 
 /**
- * Sign and send the transaction
+ *  Provide additional priority fees for our transactions
+ *  in the form of micro-lamports per CU.
+ *  Example fee: 0.000405 SOL, 400,000 CU * 1 lamport/CU = 400,000 lamports = 0.0004 SOL + base fee 0.000005 SOL = 0.000405 SOL
+ */
+const prioTransactionMessage = appendTransactionMessageInstructions(
+  [getSetComputeUnitLimitInstruction({ units: computeUnitsEstimate * 1.1 }), getSetComputeUnitPriceInstruction({ microLamports: 1_000_000 })],
+  transactionMessage
+);
+
+/**
+ *  Get estimated fee for the transaction
+ */
+const base64EncodedMessage = pipe(
+  transactionMessage,
+  compileTransactionMessage,
+  getCompiledTransactionMessageEncoder().encode,
+  getBase64Decoder().decode
+) as TransactionMessageBytesBase64;
+const transactionCost = await rpc.getFeeForMessage(base64EncodedMessage).send();
+console.log("💡 Estimated Fee Cost ", Number(transactionCost.value) / LAMPORTS_PER_SOL, "SOL");
+
+/**
+ * Sign transaction
+ */
+const signedTransaction = await signTransactionMessageWithSigners(prioTransactionMessage);
+console.log("💡 Signed Transaction:", signedTransaction);
+
+/**
+ *  Compiled signed transaction message
+ */
+const compiledMessage = getCompiledTransactionMessageDecoder().decode(signedTransaction.messageBytes as TransactionMessageBytes);
+console.log("💡 Compiled Signed Transaction Message:", compiledMessage);
+
+/**
+ * Send transaction
  */
 try {
-  const signedTransaction = await signTransactionMessageWithSigners(transactionMessage);
-  await sendTransactionWithoutConfirmingFactory({ rpc })(signedTransaction, { commitment: "confirmed" });
-  console.log("🚀 Transaction sent, awaiting confirmation via subscription...");
+  await sendTransactionWithoutConfirmingFactory({ rpc })(signedTransaction, { commitment: "confirmed", skipPreflight: true });
 } catch (e) {
-  if (isSolanaError(e, SOLANA_ERROR__JSON_RPC__SERVER_ERROR_SEND_TRANSACTION_PREFLIGHT_FAILURE)) {
-    console.error("❌ The transaction failed in simulation", e.cause);
-    abortController.abort();
+  if (isSolanaError(e, SOLANA_ERROR__BLOCK_HEIGHT_EXCEEDED)) {
+    console.error("This transaction depends on a blockhash that has expired");
   } else {
-    console.error("❌ Something went wrong", e);
-    abortController.abort();
+    throw e;
   }
 }
